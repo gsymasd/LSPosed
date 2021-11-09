@@ -3,23 +3,20 @@ package org.lsposed.lspd.service;
 import android.annotation.SuppressLint;
 import android.os.ParcelFileDescriptor;
 import android.os.SystemProperties;
+import android.system.ErrnoException;
 import android.system.Os;
 import android.util.Log;
 
 import org.lsposed.lspd.BuildConfig;
 
-import java.io.BufferedReader;
-import java.io.BufferedWriter;
 import java.io.File;
-import java.io.FileOutputStream;
-import java.io.FileWriter;
 import java.io.IOException;
-import java.io.InputStreamReader;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.Arrays;
+import java.nio.file.StandardCopyOption;
 
 public class LogcatService implements Runnable {
     private static final String TAG = "LSPosedLogcat";
@@ -112,38 +109,35 @@ public class LogcatService implements Runnable {
         getprop();
     }
 
+    private static class GetProp implements Runnable {
+        private volatile InputStream is;
+
+        @Override
+        public void run() {
+            try {
+                Os.setuid(9999); // AID_NOBODY
+                is = new ProcessBuilder("getprop").start().getInputStream();
+            } catch (ErrnoException | IOException e) {
+                e.printStackTrace();
+            }
+        }
+
+        public InputStream getValue() {
+            return is;
+        }
+    }
+
     private void getprop() {
         try {
-            var sb = new StringBuilder();
-            var t = new Thread(() -> {
-                try (var magiskPathReader = new BufferedReader(new InputStreamReader(new ProcessBuilder("magisk", "--path").start().getInputStream()))) {
-                    var magiskPath = magiskPathReader.readLine();
-                    var sh = magiskPath + "/.magisk/busybox/sh";
-                    var pid = Os.getpid();
-                    var tid = Os.gettid();
-                    try (var exec = new FileOutputStream("/proc/" + pid + "/task/" + tid + "/attr/exec")) {
-                        var untrusted = "u:r:untrusted_app:s0";
-                        exec.write(untrusted.getBytes());
-                    }
-                    try (var rd = new BufferedReader(new InputStreamReader(new ProcessBuilder(sh, "-c", "getprop").start().getInputStream()))) {
-                        String line;
-                        while ((line = rd.readLine()) != null) {
-                            sb.append(line);
-                            sb.append(System.lineSeparator());
-                        }
-                    }
-                } catch (IOException e) {
-                    Log.e(TAG, "GetProp: " + e + ": " + Arrays.toString(e.getStackTrace()));
-                }
-            });
-            t.start();
-            t.join();
+            var get = new GetProp();
+            var thread = new Thread(get);
+            thread.start();
+            thread.join();
+            var is = get.getValue();
             var propsLogPath = ConfigFileManager.getpropsLogPath();
-            try (var writer = new BufferedWriter(new FileWriter(propsLogPath))) {
-                writer.append(sb);
-            }
-        } catch (IOException | InterruptedException | NullPointerException e) {
-            Log.e(TAG, "GetProp: " + Arrays.toString(e.getStackTrace()));
+            Files.copy(is, propsLogPath.toPath(), StandardCopyOption.REPLACE_EXISTING);
+        } catch (IOException | InterruptedException e) {
+            Log.e(TAG, "getprop: " + e);
         }
     }
 
