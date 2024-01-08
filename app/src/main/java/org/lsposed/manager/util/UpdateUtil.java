@@ -1,3 +1,22 @@
+/*
+ * This file is part of LSPosed.
+ *
+ * LSPosed is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * LSPosed is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with LSPosed.  If not, see <https://www.gnu.org/licenses/>.
+ *
+ * Copyright (C) 2022 LSPosed Contributors
+ */
+
 package org.lsposed.manager.util;
 
 import android.util.Log;
@@ -69,12 +88,13 @@ public class UpdateUtil {
                 .putInt("latest_version", Integer.parseInt(splitName[2]))
                 .putLong("latest_check", Instant.now().getEpochSecond())
                 .putString("release_notes", releaseNotes)
+                .putString("zip_file", null)
                 .putBoolean("checked", true)
                 .apply();
         var updatedAt = Instant.parse(assets.get("updated_at").getAsString());
         var downloadUrl = assets.get("browser_download_url").getAsString();
-        var nowZipTime = pref.getLong("zip_time", BuildConfig.BUILD_TIME);
-        if (updatedAt.isAfter(Instant.ofEpochSecond(nowZipTime))) {
+        var zipTime = pref.getLong("zip_time", 0);
+        if (!updatedAt.equals(Instant.ofEpochSecond(zipTime))) {
             var zip = downloadNewZipSync(downloadUrl, name);
             var size = assets.get("size").getAsLong();
             if (zip != null && zip.length() == size) {
@@ -124,8 +144,6 @@ public class UpdateUtil {
         if (!ConfigManager.isBinderAlive()) return false;
         var pref = App.getPreferences();
         var zip = pref.getString("zip_file", null);
-        if (zip == null || !new File(zip).isFile()) return false;
-        var zipTime = pref.getLong("zip_time", BuildConfig.BUILD_TIME);
-        return zipTime > BuildConfig.BUILD_TIME;
+        return zip != null && new File(zip).isFile();
     }
 }
